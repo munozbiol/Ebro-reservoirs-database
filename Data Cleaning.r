@@ -96,9 +96,9 @@ mutate(Variable = recode(Variable,
     "Photic.Zone" = "Photic_zone",
     "reservoir.percentage" = "Reservoir_percentage",
     "volume.max" = "Volume_max"
-)) -> environmental_long
+)) -> environmental_long_db
 
-View(environmental_long)
+View(environmental_long_db)
 
 #Ok now looks okay
 
@@ -108,3 +108,62 @@ zooplankton_raw <- read.csv("Master_files/zooplankton.csv",
  header = TRUE)
 
 View(zooplankton_raw)
+
+#Due the dataframe structure is mandatory to arrange it
+#to have a similar structure as environmental data 
+#to assing the reservoir_id
+
+
+zooplankton_raw  |>
+#We removed the unnecesary columns for now
+ select(-c("Body.Weight":"Group")) |>
+ #Transposte
+ t() |>
+ as.data.frame() |> 
+ #first column as column names 
+ janitor::row_to_names(row_number = 1)  |>
+ #Not sure why are more columns so we will keep the necessary
+select(c("Acanthocyclops americanus":"Dresseina polymorpha")) |> 
+#rownames to columns
+tibble::rownames_to_column() |>
+#renaming the first column
+rename("Code" = "rowname")  |> 
+#now to long format
+tidyr::pivot_longer(
+    cols = -c("Code"),
+    names_to = "Species",
+    values_to = "Abundance"
+)  |> 
+#removing all NAs
+na.omit(Abundance) -> zooplankton_long
+
+View(zooplankton_long)
+
+#adding the rest of infomation categorical
+left_join(
+  zooplankton_long,
+  zooplankton_raw |> select(Species, Body.Weight:Group), 
+  by = "Species"
+)  -> zooplankton_long
+
+#Final dataframe
+left_join(
+    zooplankton_long,
+    environmental_long_db  |> select(Sampling_id, Code)  |> 
+    distinct(Code, .keep_all = TRUE), # To removes duplicates
+    by = "Code"
+) |> 
+# re arrange columns
+relocate(Sampling_id,
+ .before = Code)  |> 
+ relocate(c(Species, Abundance),
+ .after = Group)  |> 
+ #Obtaining biomass
+ mutate(Abundance = as.numeric(Abundance))  |> 
+ mutate(Biomass = Abundance * Body.Weight) |> 
+ #removing zeros in the abundance (should not be there)
+ filter(Abundance > 0) -> zooplankton_long_db
+
+View(zooplankton_long_db)
+
+#Ok now both dataframes are in long format and looks ok
